@@ -151,4 +151,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-/date
+date
+data/noisy_imagewoof.csv
+data/train/n02086240/ILSVRC2012_val_00000907.JPEG
