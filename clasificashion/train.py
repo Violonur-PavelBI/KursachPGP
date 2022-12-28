@@ -18,7 +18,8 @@ from albumentations.pytorch import ToTensorV2
 
 import clasificashion.dataloader as MyDLoad
 import clasificashion.modelloader as MyModLoad
-import clasificashion.train_alg 
+
+import clasificashion.train_alg  as train_alg
 
 show = tv.transforms.ToPILImage() # Тензор может быть преобразован в изображение для легкой визуализации
 
