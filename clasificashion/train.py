@@ -11,15 +11,14 @@ import copy
 import numpy as np
 import os
 import random
-
+import pandas
+import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-import train_alg 
-import dataloader as MyDLoad
-import optimizer  as MyOpt
-import modelloader as MyModLoad
-
+import clasificashion.dataloader as MyDLoad
+import clasificashion.modelloader as MyModLoad
+import clasificashion.train_alg 
 
 show = tv.transforms.ToPILImage() # Тензор может быть преобразован в изображение для легкой визуализации
 
@@ -28,12 +27,13 @@ def train(train_dirr,                                           # Путь до 
           model_name,# ="resnet50",                             # Название модели timm or пользовательские из кода
           Dataset_name,# ="cifar10",                            # Название Dataset (при сохранении)
           metod_aug_name,#="baseline",#="FsAA",                 # Название metoda (при сохранении)
-          task_name="clasification",                          # Название задачи  (при сохранении)
 
           train_annotation=None,                                # Путь до файла с описанием train
           val_annotation=None,                                  # Путь до файла с описанием val
           N_class = 10,                                          # Количество классов в задаче
           num_epochs=100,                                        # Количество эпох обучения
+          lr=0.00001,                                           # Коэффициент скорости обучения (Learning rate)
+          momentum=0.9,
           batch_size = 64,                                     # Размер бача
           snp_path = '/workspace/proj/clasificashion/snp/',     # Путь к папке, в которую сохранять готовые модели
                                      
@@ -48,10 +48,7 @@ def train(train_dirr,                                           # Путь до 
           SIZE = 112,                                           # Размер входа (SIZE*SIZE)
     
           # Характеристики оптимизатора
-          lr=0.00001,                                           # Коэффициент скорости обучения (Learning rate)
-          step_size=20,                                         # за сколько эпох уменьшить lr
-          gamma=0.1,                                            # Во сколько раз уменьшить lr
-          momentum=0.9,                                        # коэфицент сохранения момента
+                                       # коэфицент сохранения момента
           nesterov=False,                                         # Примять ли момент Нестерова
           classification_criterion = nn.CrossEntropyLoss(),     # Loss для классификации
           
@@ -64,15 +61,8 @@ def train(train_dirr,                                           # Путь до 
           t_rasp_file = False,                                  # Название файла, в котором каждая запись в строке означает с какой вероятностью взять соответствующий пример из анотации
           ):
     
-    Name_experement=task_name+"_"+model_name+"_"+Dataset_name+"_"+metod_aug_name
-    snp_path = snp_path+Dataset_name+'/'+model_name+'/'+metod_aug_name+'/'
-    os.makedirs(snp_path,exist_ok=True)
-    now = datetime.now()
-    dt_string = now.strftime("%d_%m_%Y")
-    tm_string = now.strftime("/%H_%M_%S/")
-    snp_path = snp_path+dt_string+tm_string
-    os.makedirs(snp_path)
-    print(snp_path)
+    Name_experement="_"+model_name+"_"+Dataset_name+"_"+metod_aug_name
+
     
     def set_seed(seed = 10):
         '''Sets the seed of the entire notebook so results are the same every time we run.
@@ -86,26 +76,70 @@ def train(train_dirr,                                           # Путь до 
         torch.backends.cudnn.benchmark = False
         return random_state
 
-    random_state = set_seed()
+    # random_state = set_seed()
     
     dataloaders={'train':MyDLoad.dataloader( train_dirr, train_annotation, 'train',Dataset_name, SIZE, N_class,Dataset, transforms,metod_aug_name,rootAA, batch_size = batch_size,num_workers=num_workers,
                                     pin_memory=pin_memory, drop_last=drop_last_t, shuffle = t_shuffle,rasp_file = t_rasp_file),
-                 'val':MyDLoad.dataloader( val_dirr, val_annotation, 'val',Dataset_name, SIZE, N_class,Dataset, transforms, metod_aug_name,rootAA,batch_size = batch_size,num_workers=num_workers,
-                              pin_memory=pin_memory, drop_last=drop_last_v, shuffle = v_shuffle,rasp_file = v_rasp_file)} 
-#     print("modelLoad")
+                'val':MyDLoad.dataloader( val_dirr, val_annotation, 'val',Dataset_name, SIZE, N_class,Dataset, transforms, metod_aug_name,rootAA,batch_size = batch_size,num_workers=num_workers,
+                            pin_memory=pin_memory, drop_last=drop_last_v, shuffle = v_shuffle,rasp_file = v_rasp_file)} 
     model_ft=  MyModLoad.get_model(model_name,N_class,path,pretrained)
-#     print("Optimazer load")
-    optimizer_ft, exp_lr_scheduler = MyOpt.get_optimizer(model=model_ft, lr=lr,momentum=momentum,nesterov=nesterov,step_size=step_size,gamma=gamma)
+    
+    optimizer_ft =optim.AdamW(model_ft.parameters(),lr=lr,betas=(momentum,0.99))
+    exp_lr_scheduler = lr_scheduler.CosineAnnealingLR(optimizer_ft,T_max=100)
     
     model_loss, model_acc, overfit_model ,best_acc = train_alg.train_model(model_ft,
-                                                                  classification_criterion,
-                                                                  optimizer_ft,
-                                                                  dataloaders,
-                                                                  exp_lr_scheduler,
-                                                                  batch_size, 
-                                                                  snp_path,
-                                                                  Name_experement,
-                                                                  num_epochs,
-                                                                  N_class,
-                                                                  multicl)
-    return model_loss, model_acc, overfit_model, best_acc
+                                                                classification_criterion,
+                                                                optimizer_ft,
+                                                                dataloaders,
+                                                                exp_lr_scheduler,
+                                                                batch_size, 
+                                                                snp_path,
+                                                                Name_experement,
+                                                                num_epochs,
+                                                                N_class,
+                                                                multicl)
+    return  model_acc, best_acc,model_loss, overfit_model
+
+def dataloader(val_dirr,anatation):
+    
+    landmarks_frame = pandas.read_csv(anatation).query("is_valid == "+str(True))
+    index=random.randint(1, len(landmarks_frame))
+    img_name = os.path.join(val_dirr,str(landmarks_frame.iloc[index,0]))
+    image = cv2.imread(img_name)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = np.array(image)
+    val_transforms = A.Compose([
+        A.Resize(112, 112),
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ToTensorV2()
+        ])
+    image= val_transforms(image=image)["image"]
+
+    landmarks=landmarks_frame.iloc[index,1]
+    landmarks = np.array(landmarks)
+    lable=landmarks
+    if lable =='n02086240':
+        label_id= 0
+    elif lable == 'n02087394' :
+        label_id=1
+    elif lable == 'n02088364'  :
+        label_id=2
+    elif lable == 'n02089973' :
+        label_id=3
+    elif lable == 'n02093754' :
+        label_id=4
+    elif lable == 'n02096294' :
+        label_id=5
+    elif lable == 'n02099601' :
+        label_id=6
+    elif lable == 'n02105641':
+        label_id=7
+    elif lable == 'n02111889':
+        label_id=8
+    elif lable == 'n02115641':
+        label_id=9
+    else :
+        label_id=lable
+        print("Нет класса из списка представленых классов")
+    label_id=np.array(label_id)
+    return image, label_id 
