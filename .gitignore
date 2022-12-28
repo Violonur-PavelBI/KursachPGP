@@ -154,3 +154,4 @@ cython_debug/
 date
 data/noisy_imagewoof.csv
 data/train/n02086240/ILSVRC2012_val_00000907.JPEG
+*.JPEG
