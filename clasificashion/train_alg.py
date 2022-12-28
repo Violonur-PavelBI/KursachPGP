@@ -105,9 +105,11 @@ def train_model(model,
                 
             if phase == 'val' and best_acc < epoch_acc:
                 print('Best val Loss classification: {:4f},Best val Acc classification:{:4f}'.format(best_Loss_classification,best_acc ))
+                
                 best_acc=epoch_acc
                 best_epoch_acc=epoch + 1
                 best_model_the_acc_classification = copy.deepcopy(model.state_dict())
+            
 
                 
     # Конечное время и печать времени работы
